@@ -1,2 +1,7 @@
-# PR2
-Practica 2. Tipologia i cicle de vida de les dades
+# PR2: Neteja i Anàlisi de dades
+
+TIPOLOGIA I CICLE DE VIDA DE LES DADES
+
+MASTER DATA SCIENCE (UOC)
+
+MARTA MARTÍNEZ / MERITXELL BOSCH
