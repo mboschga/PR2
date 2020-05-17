@@ -1,0 +1,81 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+# Carreguem els paquets R que utilitzarem
+library(ggplot2)
+library(dplyr)
+```
+
+```{r}
+dir<-getwd()
+setwd(dir)
+```
+
+
+```{r}
+
+# Obrim i guardem el joc de dades test i train 
+test <- read.csv('test.csv',stringsAsFactors = FALSE)
+train <- read.csv('train.csv', stringsAsFactors = FALSE)
+
+# Unim els dos jocs de dades en un només
+myData <- bind_rows(train,test)
+filas=dim(train)[1]
+
+# Verifiquem l'estructura del joc de dades
+str(myData)
+```
+
+```{r}
+# VERIFIQUEM QUE NO HI HA ID's REPETITS, PODEM ESBORRAR LA COLUMNA PASSANGER ID
+myData[duplicated(myData$PassengerId), ]
+```
+
+
+```{r}
+# Creem un nou joc de dades només amb les columnes que ens interessen
+data <- select(myData, -PassengerId, -Name, -SibSp, -Parch, -Ticket, -Fare, -Cabin, -Embarked)
+
+# Verifiquem l'estructura del joc de dades
+str(data)
+```
+
+```{r}
+# Factoritzem les variables amb poques classes com 'Survived', 'Pclass' i 'Sex'
+
+cols<-c("Survived","Pclass","Sex")
+for (i in cols){
+  data[,i] <- as.factor(data[,i])
+}
+
+# Analitzem la nova estructura del joc de dades
+str(data)
+
+```
+
+```{r}
+# Guardem l'arxiu que hem creat
+write.csv(data, file = "titanic_1.csv", row.names = TRUE)
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Visualitzem la relació entre les variables "sex" i "survival":
+ggplot(data=myData[1:filas,],aes(x=Sex,fill=Survived))+geom_bar()
+
+```
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+
+
