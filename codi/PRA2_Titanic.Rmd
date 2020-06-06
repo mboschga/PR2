@@ -1,28 +1,64 @@
 ---
-title: "R Notebook"
-output: html_notebook
+title: "PR2: Neteja i anàlisi de les dades"
+subtitle: "Tipologia i cicle de vida de les dades"
+author: "Meritxell Bosch i Marta Martínez"
+date: '`r format(Sys.Date(),"%e de %B, %Y")`'
+output:
+  pdf_document:
+    toc: yes
+    number_sections: yes
+    toc_depth: '4'
+    latex_engine: xelatex
+    fig_crop: true
+  html_document:
+    highlight: default
+    number_sections: yes
+    theme: cosmo
+    toc: yes
+    toc_depth: 2
 ---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+*********
 
 ```{r}
 # Carreguem els paquets R que utilitzarem
+library(data.table)
 library(ggplot2)
 library(dplyr)
+library(car)
+# install.packages("arules")
+library(arules)
+#install.packages("DescTools")
+#install.packages("oddsratio")
+library(oddsratio)
+library(DescTools)
 ```
+
 
 ```{r}
 dir<-getwd()
 setwd(dir)
 ```
 
+*********
+# Descripció del dataset
 
 ```{r}
-
 # Obrim i guardem el joc de dades test i train 
 test <- read.csv('test.csv',stringsAsFactors = FALSE)
 train <- read.csv('train.csv', stringsAsFactors = FALSE)
+```
 
-# Unim els dos jocs de dades en un només
-myData <- bind_rows(train,test)
+Podríem haver unit els dos jocs de dades en un només amb: myData <- bind_rows(train,test).
+
+Pero finalment treballarem només amb les dades de train.
+```{r}
+myData <- train
 filas=dim(train)[1]
 
 # Verifiquem l'estructura del joc de dades
@@ -30,52 +66,768 @@ str(myData)
 ```
 
 ```{r}
-# VERIFIQUEM QUE NO HI HA ID's REPETITS, PODEM ESBORRAR LA COLUMNA PASSANGER ID
-myData[duplicated(myData$PassengerId), ]
+summary(myData)
 ```
 
 
 ```{r}
-# Creem un nou joc de dades només amb les columnes que ens interessen
-data <- select(myData, -PassengerId, -Name, -SibSp, -Parch, -Ticket, -Fare, -Cabin, -Embarked)
+# Verifiquem que no hi ha IDs repetits
+myData[duplicated(myData$PassengerId), ]
+```
+
+
+
+## Reducció del dataset
+
+Creem un nou joc de dades només amb les columnes que ens interessen:
+
+```{r}
+
+data <- select(myData, -PassengerId, -Name, -SibSp, -Parch,
+               -Ticket, -Fare, -Cabin, -Embarked)
 
 # Verifiquem l'estructura del joc de dades
 str(data)
 ```
 
+
+*********
+# Neteja de les dades 
+
+## Valors perduts
+
+
+```{r }
+ 
+# busquem valors perduts
+colSums(is.na(data))
+```
+
+Els valors perduts de l'edat es poden substituir per dades estadísticament coherents, però per decidir com es fa la  substitució, és necessari veure la distribució de l'edat.
+
+```{r }
+
+hist(data$Age,main="Distribució dels passatgers segons la seva edat",
+     col="blue",border="white",breaks=15,xlab="Edat",ylab="Passatgers")
+
+```
+
+```{r }
+ 
+# Comprovem la distribució dels individus
+table(data$Sex, data$Pclass)
+
+```
+
+S'observa que els individus no estan repartits de forma equitativa entre classes socials i sexe. Per tant, per trobar un valor de substitució el millor és tenir en compte individus similars (mateix sexe i classe social).
+
+```{r }
+
+par(mfrow=c(2,3))
+hist(data$Age[(data$Sex=="male")&(data$Pclass==1)],
+     main = "Homes i classe 1", 
+     xlab = "Edat",
+     ylab = "Freqüència",col="blue",border="white")
+hist(data$Age[(data$Sex=="male")&(data$Pclass==2)],
+     main = "Homes i classe 2", 
+     xlab = "Edat",
+     ylab = "Freqüència",col="blue",border="white")
+hist(data$Age[(data$Sex=="male")&(data$Pclass==3)],
+     main = "Homes i classe 3", 
+     xlab = "Edat",
+     ylab = "Freqüència",col="blue",border="white")
+hist(data$Age[(data$Sex=="female")&(data$Pclass==1)],
+     main = "Dones i classe 1", 
+     xlab = "Edat",
+     ylab = "Freqüència",col="blue",border="white")
+hist(data$Age[(data$Sex=="female")&(data$Pclass==2)],
+     main = "Dones i classe 2", 
+     xlab = "Edat",
+     ylab = "Freqüència",col="blue",border="white")
+hist(data$Age[(data$Sex=="female")&(data$Pclass==3)],
+     main = "Dones i classe 3", 
+     xlab = "Edat",
+     ylab = "Freqüència",col="blue",border="white")
+
+```
+
+Excepte pel cas de les dones i classe 2, cap de les distribucions d'edat té distribució que s'assembli a una normal, per tant, es calcula la mediana de cada grup per substituïr el valor perdut.
+
+```{r }
+ 
+mediana <- median(data$Age[!is.na(data$Age)],na.rm=T)
+mediana_m_1 <- median(data$Age[!is.na(data$Age)&(data$Sex=="male")&
+                                 (data$Pclass==1)],na.rm=T)
+mediana_m_2 <- median(data$Age[!is.na(data$Age)&(data$Sex=="male")&
+                                 (data$Pclass==2)],na.rm=T)
+mediana_m_3 <- median(data$Age[!is.na(data$Age)&(data$Sex=="male")&
+                                 (data$Pclass==3)],na.rm=T)
+
+mediana_f_1 <- median(data$Age[!is.na(data$Age)&(data$Sex=="female")&
+                                 (data$Pclass==1)],na.rm=T)
+mediana_f_2 <- median(data$Age[!is.na(data$Age)&(data$Sex=="female")&
+                                 (data$Pclass==2)],na.rm=T)
+mediana_f_3 <- median(data$Age[!is.na(data$Age)&(data$Sex=="female")&
+                                 (data$Pclass==3)],na.rm=T)
+
+```
+
+S'observa que la mediana general és propera a 3 de les categories però molt allunyada de les altres 3, o sigui que reforça que hem d'aplicar la mediana a cada grup per separat.
+
+```{r }
+
+data$Age[is.na(data$Age)&(data$Sex=="male")&(data$Pclass==1)] <- mediana_m_1
+data$Age[is.na(data$Age)&(data$Sex=="male")&(data$Pclass==2)] <- mediana_m_2
+data$Age[is.na(data$Age)&(data$Sex=="male")&(data$Pclass==3)] <- mediana_m_3
+data$Age[is.na(data$Age)&(data$Sex=="female")&(data$Pclass==1)] <- mediana_f_1
+data$Age[is.na(data$Age)&(data$Sex=="female")&(data$Pclass==2)] <- mediana_f_2
+data$Age[is.na(data$Age)&(data$Sex=="female")&(data$Pclass==3)] <- mediana_f_3
+
+# Comprovem que ja no tenim valors perduts
+colSums(is.na(data))
+```
+
+
+
+## Valors Extrems
+
+Detecció de la presència de valors extrems en la variable 'edat'.
+
+```{r }
+
+boxplot(data$Age,col="blue",border="black", main = "Edat")
+
+```
+```{r }
+ 
+# Identificació els valors numèrics de les mostres que tenen valors extrems
+
+ages <- boxplot.stats(data$Age)$out
+sprintf('Edat mínima:  %i' , min(ages))
+sprintf('Edat màxima:  %i' , max(ages))
+
+```
+
+
+
+*********
+# Anàlisi de les dades 
+
+S'executa del test de Shapiro per a comprobar si la variable numèrica Age té distribució normal.
 ```{r}
-# Factoritzem les variables amb poques classes com 'Survived', 'Pclass' i 'Sex'
+ 
+
+# Ja s'havia fet l'histograma anteriorment
+age.test <- shapiro.test(data$Age)
+print(age.test)
+
+```
+
+
+
+## Homogeneïtat de la variància: homocedasticidad
+
+### Variància 
+
+```{r}
+
+# Comencem per fer el test de de la variança sobre 
+var.test(x = data[data$Survived == "0", "Age"],
+         y = data[data$Survived == "1", "Age"] )
+
+
+```
+
+
+### Homocedasticidad
+
+```{r}
+ 
+# I el Gràfic QQ 
+qqPlot(data$Age)
+```
+
+
+
+## Proves estadístiques
+
+
+### Preparació prèvia de les variables
+
+Factorització de les variables 'Survived', 'Pclass' i 'Sex'.
+```{r}
 
 cols<-c("Survived","Pclass","Sex")
 for (i in cols){
-  data[,i] <- as.factor(data[,i])
+          data[,i] <- as.factor(data[,i])
 }
 
-# Analitzem la nova estructura del joc de dades
-str(data)
-
 ```
 
 ```{r}
-# Guardem l'arxiu que hem creat
-write.csv(data, file = "titanic_1.csv", row.names = TRUE)
-```
-
-```{r echo=TRUE, message=FALSE, warning=FALSE}
-# Visualitzem la relació entre les variables "sex" i "survival":
-ggplot(data=myData[1:filas,],aes(x=Sex,fill=Survived))+geom_bar()
-
-```
-
-```{r}
-
+summary(data$Age)
 ```
 
 
 ```{r}
+# Discretització de l'edat
+
+data$Age.factor <- cut(data$Age, breaks=c(0, 16, 31, 51, 64, 100), 
+                       labels=c('Nens', 'Joves', 'Adults joves', 'Adults', 'Grans'))
+
+plot(data$Age.factor, col = "blue")
+
+```
+
+Cal saber l'incidència sobre els que es salven, així que ens cal assegurar l'ordre de la variable factoritzada 'Survived'.
+
+```{r}
+# Reordenem 
+data$Survived <- relevel(data$Survived, ref = "0")
+
+```
+
+
+### Relacions de dependència
+
+Aplicació del el chi-squared-test a la taula de contingència. La hipòtesi nul·la d'aquest test és que no hi ha relació entre les variables (variables són independents), i l'alternativa és que sí que hi ha una relació establerta. 
+
+#### Sex
+```{r}
+# test chi-quadrat Sex
+(tbl1 = table(data$Sex, data$Survived))
+
+```
+
+S'aplica el chi-squared test a la taula de contingència. Com anteriorment, la hipòtesi nul·la d'aquest test és que no hi ha relació entre les varibles, i l'alternativa és que sí que hi ha una relació establerta. 
+
+```{r}
+chisq.test(table(data$Sex, data$Survived)) 
+```
+
+
+Com que el p-valor (2.2e-16) és inferior al valor significatiu 0.05, es rebutja la hipòtesi nul·la d'independència.
+
+Per tant, es conclou que les dues variables s’associen estadísticament de forma significativa. 
+
+
+#### Pclass
+```{r}
+ 
+# test chi-quadrat Pclass
+
+chisq.test((table(data$Pclass, data$Survived))) 
+
+```
+
+Com que el p-valor (2.2e-16) és inferior al significat 0.05, es rebutja la hipòtesi nul·la d'independència.
+
+Per tant, es conclou que les dues variables s’associen estadísticament de forma significativa. 
+
+
+#### Age
+```{r}
+ 
+# test chi-quadrat Age
+
+chisq.test((table(data$Age.factor, data$Survived)), simulate.p.value = TRUE) 
+
+```
+
+
+Com que el p-valor (0.003498) és inferior al significat .05, ees rebutja la hipòtesi nul·la d'independència.
+
+Per tant, es conclou que les dues variables s’associen estadísticament de forma significativa.
+
+### Contrast d'hipòtesi
+
+Volem saber si és cert que es salva més gent menor de 30 anys.
+
+H~0: μ = μ~0 
+
+H~1: μ < μ~0
+
+on μ = 30
+
+```{r}
+
+# Subdividim el nostre conjunt de dades
+data_survived = data[data$Survived == "1",]
+data_nosurvived = data[data$Survived == "0",]
+
+```
+
+Per poder aplicar proves per contrast d’hipòtesis paramètriques, com la prova t de Student:
+1) Les variables de les dades analitzades han d’estar normalment distribuïdes.
+2) Les variàncies d’aquestes variables han de romandre constants al llarg del rang observat d’alguna altra variable.
+
+Quan no sigui així, es pot optar per utilitzar una alternativa no paramètrica, com les proves de Wilcoxon o Mann-Whitney.
+
+La diferència principal entre el test de suma de rangs o test U de Mann-Whitney i el test de rangs i signes de Wilcoxon és que en el primer les mostres són independents i en el segon que les dades es troben emparellades. 
+
+En aquest cas, les dades són independents, per tant, escollim el test U de Mann-Whitney (Mann–Whitney–Wilcoxon, Wilcoxon rank-sum test o Wilcoxon–Mann–Whitney).
+
+
+```{r}
+# Test wilcox.test
+res <- wilcox.test(x = data_survived$Age, y = data_nosurvived$Age, alternative = "less",
+                   mu = 30, paired = FALSE, conf.int = 0.95)
+res
+```
+
+
+Obtenim un  p-value < 2.2e-16 i per tant podem assumir que és més probable sobreviure per al menors de 30 anys.
+
+
+### Models de regressió
+
+#### Survived i PClass
+```{r}
+# Survived  i PClass
+model.glm <- glm(Survived ~ Pclass, data = data,family = binomial )
+summary(model.glm)
+
+```
+
+
+```{r}
+odds <- or_glm(data = data, model = model.glm, CI = 0.95 )
+odds
+```
+
+En quin percentatge es veu modificada la probabilitat de sobreviure segons la classe? 
+
+La variació en la probabilitat de sobreviure es pot representar en una regressió logística com la que tenim com a 1-odds %, en aquest cas, on l'intercept recull els factors més favorables. D'aquesta manera, el odds, en % representa el decrement de probabilitat de sobreviure:
+
+
+```{r}
+myodds <-odds[1:2,1:2]
+myodds["%"] <- (1 - myodds[2]) * 100
+myodds
+
+```
+
+La probabilitat de la primera classe es troba a l'intercepte. 
+
+A segona classe la probabilitat millora decau un 47,2% i tercera classe un 81,2%. És a dir, com millor classe, més probabilitat de sobreviure,
+
+#### Survived i Sex
+```{r}
+ 
+# Regressió 
+# Survived  i Sex
+model.glm <- glm(Survived ~ Sex, data = data,family = binomial )
+summary(model.glm)
+
+```
+
+
+```{r}
+odds <- or_glm(data = data, model = model.glm, CI = 0.95 )
+odds
+```
+
+
+```{r}
+myodds <-odds[1,1:2]
+myodds["%"] <- (1 - myodds[2]) * 100
+myodds
+
+```
+
+En el cas del sexe masculí, la probabilitat de sobreviure decau un 91,9%.
+
+
+#### Survived i Age
+```{r}
+ 
+# Regressió 
+# Survived  i Age
+model.glm <- glm(Survived ~ Age.factor, data = data,family = binomial )
+summary(model.glm)
+
+```
+```{r}
+odds <- or_glm(data = data, model = model.glm, CI = 0.95 )
+odds
+
+```
+
+
+```{r}
+myodds <-odds[1:4,1:2]
+myodds["%"] <- (1 - myodds[2]) * 100
+myodds
+
+```
+
+En relació a l'edat, segons el grup tenim aquesta minoració de la possibilitat de sobreviure respecte al grup dels nens:
+- joves: 59,6%
+- Adults joves : 39,6%
+- Adults:42,4%
+- Grans: 91,8%
+
+#### Regressió logística multivariable
+
+```{r}
+ 
+# Regressió logística múltiple
+modelm.glm <- glm(Survived ~ Age.factor + Pclass + Sex, data = data, family = binomial)
+summary(modelm.glm)
+```
+
+```{r}
+
+odds_glm <- or_glm(data = data, model = modelm.glm, CI = 0.95 )
+odds_glm
+
+```
+
+
+```{r}
+myodds_glm <-odds_glm[1:7,1:2]
+myodds_glm["%"] <- (1 - myodds_glm[2]) * 100
+myodds_glm
+
+```
+
+Els predictors Nens, Classe 1 i sexe femení es troben a l'intercepte i són els casos més favorables per la supervivència (tots els odds, són menors que 1)
+
+Per tant, els predictors empitjoren tots la possibilitat de supervivència en els percentatges següents:
+- Joves: 61,9%
+- Adults joves: 70,4%
+- Adults: 83,4%
+- Grans: 93,5%
+- 2a Classe:  66,2%
+- 3a Classe: 90%
+- Sexe masculí: 92,5% 
+
+
+### Predicció
+
+#### Predicció d'un passatger
+
+```{r}
+test[3,]
+```
+
+
+```{r}
+# Predicció d'un passatger
+passatger_1 = data.frame(Sex = "male", Pclass = "2", Age.factor = "Adults")
+pred_p1 = predict(modelm.glm, passatger_1, type= "response")
+pred_p1
+```
+Aquest passatger té un 12,32% de probabilitats de sobreviure.
+
+#### Predicció del dataset test
+
+```{r}
+data_test <- select(test, -PassengerId, -Name, -SibSp, -Parch, -Ticket, -Fare,
+                    -Cabin, -Embarked)
+
+colSums(is.na(data_test))
+
+```
+
+No calculem medianes noves, imputem les calculades en el grup anterior.
+```{r}
+# Imputem
+data_test$Age[is.na(data_test$Age)&(data_test$Sex=="male")&
+                (data_test$Pclass==1)] <- mediana_m_1
+data_test$Age[is.na(data_test$Age)&(data_test$Sex=="male")&
+                (data_test$Pclass==2)] <- mediana_m_2
+data_test$Age[is.na(data_test$Age)&(data_test$Sex=="male")&
+                (data_test$Pclass==3)] <- mediana_m_3
+data_test$Age[is.na(data_test$Age)&(data_test$Sex=="female")&
+                (data_test$Pclass==1)] <- mediana_f_1
+data_test$Age[is.na(data_test$Age)&(data_test$Sex=="female")&
+                (data_test$Pclass==2)] <- mediana_f_2
+data_test$Age[is.na(data_test$Age)&(data_test$Sex=="female")&
+                (data_test$Pclass==3)] <- mediana_f_3
+# Comprovem que ja no tenim valors perduts
+colSums(is.na(data_test))
+```
+
+Cal aplicar els mateixos procesos a les variables, en aquest cas, discretitzar i factoritzar:
+
+```{r warning=FALSE}
+# Factoritzem les variables 'Pclass' i 'Sex'
+cols<-c("Pclass","Sex")
+for (i in cols){
+          data_test[,i] <- as.factor(data_test[,i])
+}
+# Discretitzem l'edat
+data_test$Age.factor <- cut(data_test$Age, breaks=c(0, 16, 31, 51, 64, 100), 
+                       labels=c('Nens', 'Joves', 'Adults joves', 'Adults', 'Grans'))
+plot(data_test$Age.factor, col = "blue")
+```
+
+```{r}
+summary(data_test$Age.factor)
+```
+
+```{r}
+# Revisem que no hi hagi valors nuls 
+colSums(is.na(data_test))
+```
+
+Predicció del contingut del fitxer test:
+
+```{r}
+# Generem un dataframe de valors
+tots_passatgers <- data.frame(Sex = data_test$Sex, Pclass = data_test$Pclass,
+                              Age.factor = data_test$Age.factor)
+
+# Executem la predicció. Com que és binaria fem servir type = response
+pred_pt = predict(modelm.glm, tots_passatgers, type = "response")
+
+# Visualitzem resultats
+
+hist(pred_pt,main="predicció de supervivència", col="blue", border="white",
+     breaks=15, xlab="Probabilitat de supervivència",ylab="Nombre de passatgers")
+```
+
+Assignar valors a la columna del dataset:
+Si volguéssim participar al concurs, es mantindria com a objecte independent.
+
+```{r}
+# Carreguem els valors de predicció al data set
+data_test$Survived <- pred_pt
+
+# Hem de decidir a partir de quin llindar de probabilitat considerem que sobreviu o no.
+
+llindar = 0.5
+
+data_test$Survived[which(data_test$Survived < llindar)]<- 0
+data_test$Survived[which(data_test$Survived >= llindar)]<- 1
+
+# Recompte dels supervivents en el set de test
+table(data_test$Survived)
+```
+
+*********
+# Gràfics i taules
+
+Preparació de la variable Survived per a que sigui més entenedora:
+
+```{r}
+
+#Factoritzem la variable "Survived" del conjunt de test
+data_test$Survived <- as.factor(data_test$Survived)
+
+# Reordenem per a les gràfiques
+data$Survived <- relevel(data$Survived, ref = "0")
+data_test$Survived <- relevel(data_test$Survived, ref = "0")
+
+
+# Relevel de les varibles Survives i Age factoritzat
+levels(data$Survived ) <- c('No', 'Sí')
+levels(data_test$Survived) <- c('No', 'Sí')
+
+```
+
+## Percentages de supervivents i no supervivents
+### Al conjunt d'entrenament
+```{r}
+tabla1 <- setDT(data)[, .(Percentatge = 100 *.N / nrow(data)), by = Survived]
+tabla1 
+```
+
+### A les prediccions
+```{r}
+tabla2 <- setDT(data_test)[, .(Percentatge = 100 *.N / nrow(data_test)), by = Survived]
+tabla2 
+```
+
+
+## Gràfiques del conjunt d'entrenament
+
+Distribució de la supervivència en relació al sexe, la classe i l'edat.
+
+```{r}
+
+ggplot(data = data,aes(x= Pclass,fill=Sex))+geom_bar(position="fill") +
+  facet_wrap(~Age.factor) + labs(y= "Percentatge", x = "Classe")  + 
+  theme(legend.position="bottom",
+        legend.background = element_rect(fill="lightgrey",size=0.5,
+                                         linetype="solid",colour ="black"))+ 
+  ggtitle("Sexe per classe i edat")
+
+```
+
+
+```{r}
+ggplot(data=data,aes(x=Sex,fill=Survived))+geom_bar(width=0.5)+
+  labs(y= "Freqüència", x = "Sexe")+
+  theme(legend.position="bottom",
+        legend.background = element_rect(fill="lightgrey", size=0.5,
+                                         linetype="solid",colour ="black"))+
+  ggtitle("Supervivència per sexe")
+```
+
+
+```{r}
+ggplot(data=data,aes(x=Pclass,fill=Survived))+geom_bar(width=0.5) + 
+  labs(y= "Freqüència", x = "Classe") + 
+  theme(legend.position="bottom",
+        legend.background = element_rect(fill="lightgrey", size=0.5,
+                                         linetype="solid",colour ="black")) +
+  ggtitle("Supervivència per classe")
+
+```
+
+
+```{r}
+ggplot(data=data,aes(x=Age.factor,fill=Survived))+geom_bar(width=0.5) +
+  labs(y= "Freqüència", x = "Edat")  +  
+  theme(legend.position="bottom",
+        legend.background = element_rect(fill="lightgrey",size=0.5,
+                                         linetype="solid",colour ="black")) +
+  ggtitle("Supervivència per edat")
+
+```
+
+
+```{r}
+ggplot(data = data,aes(x=Sex,fill=Survived))+geom_bar(position="fill") +
+  facet_wrap(~Pclass) + labs(y= "Percentatge", x = "Sexe")  + 
+  theme(legend.position="bottom",
+        legend.background = element_rect(fill="lightgrey",size=0.5,
+                                         linetype="solid",colour ="black")) +
+  ggtitle("Supervivència per sexe i classe")
+
+```
+
+```{r}
+
+ggplot(data = data,aes(x=Pclass,fill=Survived))+geom_bar(position="fill") +
+  facet_wrap(~Age.factor) + labs(y= "Percentatge", x = "Classe")  +
+  theme(legend.position="bottom",
+        legend.background = element_rect(fill="lightgrey",size=0.5,
+                                         linetype="solid",colour ="black")) +
+  ggtitle("Supervivència per classe i edat")
+
+```
+
+
+```{r}
+
+ggplot(data = data,aes(x=Sex,fill=Survived))+geom_bar(position="fill") +
+  facet_wrap(~Age.factor) + labs(y= "Percentatge", x = "Sexe")  +
+  theme(legend.position="bottom",
+        legend.background = element_rect(fill="lightgrey",size=0.5,
+                                         linetype="solid",colour ="black")) +
+  ggtitle("Supervivència per sexe i edat")
+
+```
+
+
+## Gràfiques del conjunt de test amb la predicció
+
+Distribució de la supervivència predita en relació al sexe, la classe i l'edat.
+
+```{r}
+
+ggplot(data = data_test,aes(x= Pclass,fill=Sex))+geom_bar(position="fill") +
+  facet_wrap(~Age.factor) + labs(y= "Percentatge", x = "Classe")  + 
+  theme(legend.position="bottom",
+        legend.background = element_rect(fill="lightgrey",size=0.5,
+                                         linetype="solid",colour ="black")) +
+  ggtitle("Sexe per classe i edat")
+
+```
+
+
+```{r}
+ggplot(data=data_test,aes(x=Sex,fill=Survived))+geom_bar(width=0.5) +
+  labs(y= "Freqüència", x = "Sexe") +  
+  theme(legend.position="bottom"
+        ,legend.background = element_rect(fill="lightgrey", size=0.5,
+                                          linetype="solid",colour ="black")) +
+  ggtitle("Supervivència predita per sexe")
+```
+
+
+```{r}
+ggplot(data=data_test,aes(x=Pclass,fill=Survived))+geom_bar(width=0.5) +
+  labs(y= "Freqüència", x = "Classe") + 
+  theme(legend.position="bottom", 
+        legend.background = element_rect(fill="lightgrey", size=0.5,
+                                         linetype="solid",colour ="black")) +
+  ggtitle("Supervivència predita per classe")
+
+```
+
+```{r}
+ggplot(data=data_test,aes(x=Age.factor,fill=Survived))+geom_bar(width=0.5) +
+  labs(y= "Freqüència", x = "Edat")  +  
+  theme(legend.position="bottom",
+        legend.background = element_rect(fill="lightgrey",size=0.5,
+                                         linetype="solid",colour ="black")) +
+  ggtitle("Supervivència predita per edat")
+
+```
+
+
+```{r}
+ggplot(data = data_test,aes(x=Sex,fill=Survived))+geom_bar(position="fill") +
+  facet_wrap(~Pclass) + labs(y= "Percentatge", x = "Sexe")  + 
+  theme(legend.position="bottom",
+        legend.background = element_rect(fill="lightgrey",size=0.5,
+                                         linetype="solid",colour ="black")) +
+  ggtitle("Supervivència predita per sexe i classe")
+
+```
+
+```{r}
+
+ggplot(data = data_test,aes(x=Sex,fill=Survived))+geom_bar(position="fill") +
+  facet_wrap(~Age.factor) + labs(y= "Percentatge", x = "Sexe")  + 
+  theme(legend.position="bottom",
+        legend.background = element_rect(fill="lightgrey",size=0.5,
+                                         linetype="solid",colour ="black")) +
+  ggtitle("Supervivència predita per sexe i edat")
 
 ```
 
 
 
+# Fitxer final 
+
+Fitxer amb el conjunt d'entrenament i el de test amb les prediccions
+
+
+```{r}
+# Unió de les dades originals amb les dades de test amb els resultats de la predicció
+finalData <- bind_rows(data,data_test)
+
+# Modificació de les etiqutes del factor edat per a que no es perdin els talls fets
+levels(finalData$Age.factor) <- c("0-16", "17-31", "32-51", "52-64", "65+")
+
+# Revisió de la integritat del fitxer
+str(finalData)
+
+```
+
+```{r}
+# Generació de l'arxiu de sortida
+write.csv(finalData, file = "titanic_final.csv", row.names = TRUE)
+```
+
+
+
+# Fonts consultades
+
+Chi-squared Test of Independence
+Recurs en línea: http://www.r-tutor.com/elementary-statistics/goodness-fit/chi-squared-test-independence
+
+How do I interpret the AIC. 2018. [Web] R-blogger.
+Recurs en línea: https://www.r-bloggers.com/how-do-i-interpret-the-aic/
+
+López Cano, Emilio. Ejemplo de Regresión Logística (modelo logit) con R.2017. [Web] RPubs.
+Recurs en línea: https://rpubs.com/emilopezcano/logit
+
+Schratz, Patrick. Calculate Odds Ratios Of Generalized Linear (Mixed) Models. [Web] rdocumentation.
+Recurs en línea: https://www.rdocumentation.org/packages/oddsratio/versions/2.0.0/topics/or_glm
 
